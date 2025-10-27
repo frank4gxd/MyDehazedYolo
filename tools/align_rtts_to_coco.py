@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Align RTTS 5-class YOLO labels to COCO80 indices.
 Default: write to labels_coco (non-destructive). Use --inplace to overwrite with backup.
@@ -7,10 +6,13 @@ RTTS names (given): ['bicycle','bus','car','motorbike','person']
 COCO indices: person=0, bicycle=1, car=2, motorcycle=3, bus=5
 Mapping (RTTS->COCO): {0:1, 1:5, 2:2, 3:3, 4:0}
 """
-import argparse, shutil
+
+import argparse
+import shutil
 from pathlib import Path
 
-MAPPING = {0:1, 1:5, 2:2, 3:3, 4:0}  # RTTS idx -> COCO80 idx
+MAPPING = {0: 1, 1: 5, 2: 2, 3: 3, 4: 0}  # RTTS idx -> COCO80 idx
+
 
 def remap_file(src, dst):
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -36,12 +38,17 @@ def remap_file(src, dst):
         out_lines.append(" ".join(parts))
     dst.write_text("\n".join(out_lines) + ("\n" if out_lines else ""), encoding="utf-8")
 
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default=r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO",
-                    help="Dataset root that contains images/ and labels/")
-    ap.add_argument("--inplace", action="store_true",
-                    help="Overwrite labels/ in-place (backup to labels_5cls_backup/ first)")
+    ap.add_argument(
+        "--root",
+        default=r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO",
+        help="Dataset root that contains images/ and labels/",
+    )
+    ap.add_argument(
+        "--inplace", action="store_true", help="Overwrite labels/ in-place (backup to labels_5cls_backup/ first)"
+    )
     args = ap.parse_args()
 
     root = Path(args.root)
@@ -64,7 +71,7 @@ def main():
     count_files = 0
     for sp in splits:
         src_split = labels_dir / sp
-        dst_split = out_root / sp
+        out_root / sp
         if not src_split.exists():
             print(f"[WARN] Missing split folder: {src_split} (skip)")
             continue
@@ -78,6 +85,7 @@ def main():
     if not args.inplace:
         print("       To evaluate with Ultralytics, temporarily rename:")
         print(f"       {out_root}  ->  {root / 'labels'}  (or pass --inplace to overwrite with backup)")
+
 
 if __name__ == "__main__":
     main()

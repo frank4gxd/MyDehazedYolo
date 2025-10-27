@@ -1,9 +1,11 @@
-import sys, re
+import re
+import sys
 from pathlib import Path
 
 # Remove trailing "_AOD-Net" or "_AOD-net" before the extension
-SUFFIX_RE = re.compile(r"_AOD-[Nn]et$")            # end of stem
-VALID_EXTS = {".jpg", ".jpeg", ".png"}             # case-insensitive
+SUFFIX_RE = re.compile(r"_AOD-[Nn]et$")  # end of stem
+VALID_EXTS = {".jpg", ".jpeg", ".png"}  # case-insensitive
+
 
 def main(img_dir: Path) -> int:
     if not img_dir.is_dir():
@@ -43,8 +45,7 @@ def main(img_dir: Path) -> int:
 
     if changed == 0:
         # Help debug if nothing matched
-        examples = [p.name for p in img_dir.iterdir()
-                    if p.is_file() and any(s in p.name for s in ["AOD", "aod"])][:10]
+        examples = [p.name for p in img_dir.iterdir() if p.is_file() and any(s in p.name for s in ["AOD", "aod"])][:10]
         if examples:
             print("[INFO] No renames performed. Examples in folder:")
             for name in examples:
@@ -52,6 +53,7 @@ def main(img_dir: Path) -> int:
 
     print(f"[DONE] Scanned {total} image(s), renamed {changed}.")
     return 0
+
 
 if __name__ == "__main__":
     default = r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\images\test_AOD"
