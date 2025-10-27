@@ -1,11 +1,11 @@
 # ultralytics/ultralytics/nn/modules/dehaze_enhanced.py
-# -*- coding: utf-8 -*-
 
 from __future__ import annotations
-import os
+
 import inspect
+import os
 import warnings
-from typing import Any, Dict, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -13,8 +13,7 @@ import torch.nn as nn
 # --- 安全导入 EnhancedDehazeNet：优先 ultralytics.Dehaze，回退顶层 Dehaze ---
 _ENHANCED_CLS = None
 _ERRS = []
-for _imp in ("ultralytics.Dehaze.enhanced_dehaze_model",
-             "Dehaze.enhanced_dehaze_model"):
+for _imp in ("ultralytics.Dehaze.enhanced_dehaze_model", "Dehaze.enhanced_dehaze_model"):
     try:
         _mod = __import__(_imp, fromlist=["EnhancedDehazeNet"])
         _ENHANCED_CLS = getattr(_mod, "EnhancedDehazeNet")
@@ -29,7 +28,7 @@ if _ENHANCED_CLS is None:
     raise ImportError("\n".join(lines))
 
 
-def _coerce_bool_env(v: Optional[str], default: bool) -> bool:
+def _coerce_bool_env(v: str | None, default: bool) -> bool:
     if v is None:
         return default
     return v.strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -37,7 +36,7 @@ def _coerce_bool_env(v: Optional[str], default: bool) -> bool:
 
 class DehazeEnhanced(nn.Module):
     """
-    Drop-in 去雾层 for YOLO*. 期望输入/输出: NCHW, RGB, float in [0, 1]，通道恒等 3→3。
+    Drop-in 去雾层 for YOLO*. 期望输入/输出: NCHW, RGB, float in [0, 1]，通道恒等 3→3。.
 
     YAML 示例（推荐放在 backbone 第一层）:
       - [-1, 1, DehazeEnhanced, {
@@ -62,16 +61,14 @@ class DehazeEnhanced(nn.Module):
       DEHAZE_FREEZE_ALL, DEHAZE_STRICT, DEHAZE_ALLOW_PARTIAL
     """
 
-    def __init__(self, c1: int = 3, c2: Optional[int] = None, *args: Any, **kwargs: Any):
+    def __init__(self, c1: int = 3, c2: int | None = None, *args: Any, **kwargs: Any):
         super().__init__()
         if c2 is None:
             c2 = c1
         assert c1 == 3 and c2 == 3, "DehazeEnhanced expects 3->3 (RGB in/out)."
 
         # ---------- 读取与剥离本层控制参数 ----------
-        self.eval_mode: str = str(
-            kwargs.pop("eval_mode", os.getenv("DEHAZE_EVAL_MODE", "fused"))
-        ).lower()
+        self.eval_mode: str = str(kwargs.pop("eval_mode", os.getenv("DEHAZE_EVAL_MODE", "fused"))).lower()
         if self.eval_mode not in {"fused", "direct", "physics"}:
             warnings.warn(f"[DehazeEnhanced] Unknown eval_mode='{self.eval_mode}', fallback to 'fused'.")
             self.eval_mode = "fused"
@@ -82,7 +79,9 @@ class DehazeEnhanced(nn.Module):
 
         ckpt = kwargs.pop(
             "ckpt",
-            os.getenv("DEHAZE_CKPT", "E:/Ivs_FrankGuo/Yolo12_Dehazed/ultralytics/checkpoints_ft_ohaze_enhanced/best_ft.pth")
+            os.getenv(
+                "DEHAZE_CKPT", "E:/Ivs_FrankGuo/Yolo12_Dehazed/ultralytics/checkpoints_ft_ohaze_enhanced/best_ft.pth"
+            ),
         )
 
         # 一些常用超参可由环境变量覆盖（若 YAML 未显式给）
@@ -126,8 +125,10 @@ class DehazeEnhanced(nn.Module):
                 unexp = set(sd.keys()) - set(compat.keys())
                 self.net.load_state_dict({**own, **compat}, strict=False)
                 if allow_partial:
-                    warnings.warn(f"[DehazeEnhanced] partial load: matched={len(compat)}, "
-                                  f"missing={len(miss)}, unexpected={len(unexp)}")
+                    warnings.warn(
+                        f"[DehazeEnhanced] partial load: matched={len(compat)}, "
+                        f"missing={len(miss)}, unexpected={len(unexp)}"
+                    )
                 else:
                     raise RuntimeError(
                         "strict=False but allow_partial=0 and shapes mismatch. "
@@ -174,7 +175,7 @@ class DehazeEnhanced(nn.Module):
     def frozen(self) -> bool:
         return self._frozen or not any(p.requires_grad for p in self.net.parameters())
 
-    def _select_output(self, out: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _select_output(self, out: dict[str, torch.Tensor]) -> torch.Tensor:
         # EnhancedDehazeNet.forward 返回 dict
         if self.eval_mode == "fused" and "fused_dehazed" in out:
             return out["fused_dehazed"]
@@ -198,7 +199,7 @@ class DehazeEnhanced(nn.Module):
             pass
 
         # 关闭 autocast，整段 Dehaze 分支在 FP32 下执行
-        device_type = 'cuda' if xin.is_cuda else ('mps' if xin.device.type == 'mps' else 'cpu')
+        device_type = "cuda" if xin.is_cuda else ("mps" if xin.device.type == "mps" else "cpu")
         with torch.amp.autocast(device_type=device_type, enabled=False):
             if self.frozen:
                 with torch.no_grad():
