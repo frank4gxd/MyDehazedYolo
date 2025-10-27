@@ -1,9 +1,11 @@
 # save_clean_ffa.py
 import argparse
+
+import numpy as np
 import torch
 import torch.serialization as ts
 from numpy.core.multiarray import scalar as np_scalar
-import numpy as np
+
 
 def extract_state_dict(ckpt):
     if isinstance(ckpt, dict):
@@ -13,17 +15,20 @@ def extract_state_dict(ckpt):
                 return v
     return ckpt
 
+
 def strip_prefixes(state):
     def strip(d, p):
-        return {k[len(p):]: v for k, v in d.items()} if all(k.startswith(p) for k in d) else d
+        return {k[len(p) :]: v for k, v in d.items()} if all(k.startswith(p) for k in d) else d
+
     state = strip(state, "module.")
     state = strip(state, "model.")
     state = strip(state, "net.")
     return state
 
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--in",  dest="inp", required=True, help="path to original .pk")
+    ap.add_argument("--in", dest="inp", required=True, help="path to original .pk")
     ap.add_argument("--out", dest="out", required=True, help="path to write plain state_dict .pth")
     args = ap.parse_args()
 
@@ -45,6 +50,7 @@ def main():
 
     torch.save(state, args.out)
     print(f"[SAVE] wrote clean state_dict -> {args.out}")
+
 
 if __name__ == "__main__":
     main()

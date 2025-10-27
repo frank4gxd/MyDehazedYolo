@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
 """
 批量离线去雾（EnhancedDehazeNet 预计算，硬编码为你的训练配置）
+
 - 读取单张图片
 - RGB[0,1] -> EnhancedDehazeNet 前向 -> 取 fused/physics/direct
-- 写回 BGR uint8 到指定目录（保留子目录结构）
+- 写回 BGR uint8 到指定目录（保留子目录结构）.
 
 特性：
 - 自动 pad 到 32 倍数，前向后再裁回原图尺寸
@@ -13,14 +13,14 @@
 - 速度/稳定增强：CUDA TF32、cudnn.benchmark、inference_mode
 """
 
-import os
-import cv2
-import sys
-import glob
 import argparse
+import glob
+import os
+import sys
 import traceback
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 
@@ -43,17 +43,14 @@ def is_image_file(p: str, exts=(".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif"
 
 
 def haze_score_dark_channel(img_bgr: np.ndarray) -> float:
-    """暗通道均值：值越大→越有雾（0~1）"""
+    """暗通道均值：值越大→越有雾（0~1）."""
     rgb = img_bgr.astype(np.float32) / 255.0
     dc = rgb.min(axis=2)
     return float(dc.mean())
 
 
 def pad_to_multiple(x: torch.Tensor, multiple: int = 32, value: float = 0.5):
-    """
-    把 NCHW pad 到 multiple 的倍数；返回 (padded, (orig_h, orig_w))
-    注意：即使不 pad，也返回真实 (h,w)，避免 (0,0) 导致裁剪空张量。
-    """
+    """把 NCHW pad 到 multiple 的倍数；返回 (padded, (orig_h, orig_w)) 注意：即使不 pad，也返回真实 (h,w)，避免 (0,0) 导致裁剪空张量。."""
     n, c, h, w = x.shape
     nh = (h + multiple - 1) // multiple * multiple
     nw = (w + multiple - 1) // multiple * multiple
@@ -65,7 +62,7 @@ def pad_to_multiple(x: torch.Tensor, multiple: int = 32, value: float = 0.5):
 
 
 def crop_back(y: torch.Tensor, orig_hw):
-    """把 pad 后的 NCHW 裁回原始 HxW"""
+    """把 pad 后的 NCHW 裁回原始 HxW."""
     if isinstance(orig_hw, (list, tuple)) and len(orig_hw) == 2:
         h, w = orig_hw
     else:
@@ -76,24 +73,29 @@ def crop_back(y: torch.Tensor, orig_hw):
 def _build_hardcoded_model(device: str):
     """
     用与你的 YAML 完全一致的配置构建模型：
-      - use_dino_backbone=True
-      - dino_name='convnext_small.dinov3_lvd1689m'
-      - base_ch=64, heads=4, norm_type='pono'
-      - AOD/physics/edge/channel attention 全开
+
+    - use_dino_backbone=True
+    - dino_name='convnext_small.dinov3_lvd1689m'
+    - base_ch=64, heads=4, norm_type='pono'
+    - AOD/physics/edge/channel attention 全开.
     """
     try:
-        net = EnhancedDehazeNet(
-            use_dino_backbone=True,
-            dino_name="convnext_small.dinov3_lvd1689m",
-            dino_freeze=True,
-            base_ch=64,
-            heads=4,
-            norm_type="pono",
-            use_edge_enhancement=True,
-            use_channel_attention=True,
-            use_aod_head=True,
-            use_physics_guidance=True,
-        ).to(device).eval()
+        net = (
+            EnhancedDehazeNet(
+                use_dino_backbone=True,
+                dino_name="convnext_small.dinov3_lvd1689m",
+                dino_freeze=True,
+                base_ch=64,
+                heads=4,
+                norm_type="pono",
+                use_edge_enhancement=True,
+                use_channel_attention=True,
+                use_aod_head=True,
+                use_physics_guidance=True,
+            )
+            .to(device)
+            .eval()
+        )
         return net
     except ImportError as e:
         # 典型：timm 未安装
@@ -102,13 +104,12 @@ def _build_hardcoded_model(device: str):
         sys.exit(1)
 
 
-def load_dehaze_model(ckpt_path: str,
-                      device: str = "cuda",
-                      eval_mode: str = "fused"):
+def load_dehaze_model(ckpt_path: str, device: str = "cuda", eval_mode: str = "fused"):
     """
     返回 (net, run_fn)
+
     - net: EnhancedDehazeNet (eval 模式)
-    - run_fn: 接受 NCHW RGB[0,1] 的 Tensor，返回同尺寸 dehazed RGB[0,1]
+    - run_fn: 接受 NCHW RGB[0,1] 的 Tensor，返回同尺寸 dehazed RGB[0,1].
     """
     net = _build_hardcoded_model(device)
 
@@ -182,14 +183,18 @@ def main():
     ap.add_argument("--src", required=True, help="源图片根目录或通配符 (例如 E:/.../images/train)")
     ap.add_argument("--dst", required=True, help="输出目录 (例如 E:/.../images/train_dehazed)")
     ap.add_argument("--ckpt", default=os.getenv("DEHAZE_CKPT", ""), help="EnhancedDehazeNet 预训练权重路径")
-    ap.add_argument("--device", default="cuda" if torch.cuda.is_available()
-                    else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"),
-                    choices=["cuda", "cpu", "mps"])
-    ap.add_argument("--eval-mode", default=os.getenv("DEHAZE_EVAL_MODE", "fused"),
-                    choices=["fused", "physics", "direct"])
+    ap.add_argument(
+        "--device",
+        default="cuda"
+        if torch.cuda.is_available()
+        else ("mps" if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() else "cpu"),
+        choices=["cuda", "cpu", "mps"],
+    )
+    ap.add_argument(
+        "--eval-mode", default=os.getenv("DEHAZE_EVAL_MODE", "fused"), choices=["fused", "physics", "direct"]
+    )
     ap.add_argument("--exts", default="jpg,jpeg,png,bmp,webp,tif,tiff", help="扫描的图片后缀，逗号分隔")
-    ap.add_argument("--gate-thresh", type=float, default=0.0,
-                    help="雾量门控阈值（0=不启用；建议 0.15~0.20）")
+    ap.add_argument("--gate-thresh", type=float, default=0.0, help="雾量门控阈值（0=不启用；建议 0.15~0.20）")
     ap.add_argument("--skip-existing", action="store_true", help="若目标文件已存在则跳过")
     ap.add_argument("--print-every", type=int, default=50, help="多少张打印一次进度")
     args = ap.parse_args()
@@ -223,11 +228,7 @@ def main():
     # 加载模型
     print(f"[info] device={args.device}  eval_mode={args.eval_mode}")
     print(f"[info] ckpt={args.ckpt}")
-    _, run_model = load_dehaze_model(
-        ckpt_path=args.ckpt,
-        device=args.device,
-        eval_mode=args.eval_mode
-    )
+    _, run_model = load_dehaze_model(ckpt_path=args.ckpt, device=args.device, eval_mode=args.eval_mode)
 
     dst_root = Path(args.dst)
     src_root = Path(args.src) if os.path.isdir(args.src) else None
@@ -295,7 +296,7 @@ def main():
                 break
             except Exception as e:
                 n_err += 1
-                print(f"[error] file={f}\n{repr(e)}")
+                print(f"[error] file={f}\n{e!r}")
                 traceback.print_exc()
                 # 兜底写回原图，避免训练集缺图
                 try:
