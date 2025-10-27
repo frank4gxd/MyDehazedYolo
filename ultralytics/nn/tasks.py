@@ -68,6 +68,7 @@ from ultralytics.nn.modules import (
     YOLOEDetect,
     YOLOESegment,
     v10Detect,
+    DehazeEnhanced,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1246,8 +1247,8 @@ class YOLOESegModel(YOLOEModel, SegmentationModel):
 
     Examples:
         Initialize a YOLOE segmentation model
-        >>> model = YOLOESegModel("yoloe-v8s-seg.yaml", ch=3, nc=80)
-        >>> results = model.predict(image_tensor, tpe=text_embeddings)
+       # >>> model = YOLOESegModel("yoloe-v8s-seg.yaml", ch=3, nc=80)
+        #>>> results = model.predict(image_tensor, tpe=text_embeddings)
     """
 
     def __init__(self, cfg="yoloe-v8s-seg.yaml", ch=3, nc=None, verbose=True):
@@ -1342,9 +1343,9 @@ def temporary_modules(modules=None, attributes=None):
         attributes (dict, optional): A dictionary mapping old module attributes to new module attributes.
 
     Examples:
-        >>> with temporary_modules({"old.module": "new.module"}, {"old.module.attribute": "new.module.attribute"}):
-        >>> import old.module  # this will now import new.module
-        >>> from old.module import attribute  # this will now import new.module.attribute
+      #  >>> with temporary_modules({"old.module": "new.module"}, {"old.module.attribute": "new.module.attribute"}):
+      #  >>> import old.module  # this will now import new.module
+      #  >>> from old.module import attribute  # this will now import new.module.attribute
 
     Note:
         The changes are only in effect inside the context manager and are undone once the context manager exits.
