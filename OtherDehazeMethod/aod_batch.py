@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 AOD-Net batch dehazing via OpenCV DNN (no caffe).
 
@@ -21,28 +20,30 @@ Usage (PowerShell):
 Tip: If your final blob isn't named 'sum', set --out-blob to the actual top name
 (or omit --out-blob to take the last layer).
 """
+
+import argparse
 import os
 import re
 import time
-import argparse
 from pathlib import Path
 
-import numpy as np
 import cv2
+import numpy as np
 
 UNSUPPORTED = {"EuclideanLoss", "SoftmaxWithLoss", "SigmoidCrossEntropyLoss", "Accuracy", "HingeLoss"}
 
+
 def strip_loss_and_label_blocks(ptxt: str) -> str:
     # Remove input: "label" (and optional dims) at top-level (CRLF/indent safe)
-    ptxt = re.sub(r'(?ms)^\s*input\s*:\s*"label"\s*(?:\r?\n\s*input_dim\s*:\s*\d+\s*){0,4}', '', ptxt)
+    ptxt = re.sub(r'(?ms)^\s*input\s*:\s*"label"\s*(?:\r?\n\s*input_dim\s*:\s*\d+\s*){0,4}', "", ptxt)
 
     # Remove TRAIN-only includes
-    ptxt = re.sub(r'(?ms)include\s*\{\s*phase\s*:\s*TRAIN\s*\}', '', ptxt)
+    ptxt = re.sub(r"(?ms)include\s*\{\s*phase\s*:\s*TRAIN\s*\}", "", ptxt)
 
     # Remove loss/accuracy layers entirely; also strip label tops/bottoms in other blocks
     out, i, n = [], 0, len(ptxt)
     while i < n:
-        j = ptxt.find('layer {', i)
+        j = ptxt.find("layer {", i)
         if j == -1:
             out.append(ptxt[i:])
             break
@@ -50,9 +51,9 @@ def strip_loss_and_label_blocks(ptxt: str) -> str:
         # find matching brace for this layer
         k, depth = j, 0
         while k < n:
-            if ptxt[k] == '{':
+            if ptxt[k] == "{":
                 depth += 1
-            elif ptxt[k] == '}':
+            elif ptxt[k] == "}":
                 depth -= 1
                 if depth == 0:
                     k += 1
@@ -66,34 +67,34 @@ def strip_loss_and_label_blocks(ptxt: str) -> str:
             pass
         else:
             # remove any label tops/bottoms inside non-loss blocks
-            block = re.sub(r'(?m)^\s*(top|bottom)\s*:\s*"label"\s*$', '', block)
+            block = re.sub(r'(?m)^\s*(top|bottom)\s*:\s*"label"\s*$', "", block)
             out.append(block)
         i = k
-    return ''.join(out)
+    return "".join(out)
+
 
 def normalize_input_header(ptxt: str, H: int, W: int, mode: str = "input") -> str:
-    """
-    mode = "input"  -> inject clean Input layer; zero top-level input/input_dim/input_shape
-    mode = "legacy" -> inject legacy top-level input + 4x input_dim; zero Input layers
+    """Mode = "input"  -> inject clean Input layer; zero top-level input/input_dim/input_shape mode = "legacy" -> inject
+    legacy top-level input + 4x input_dim; zero Input layers.
     """
     # Remove any top-level input headers (CRLF-safe)
-    ptxt = re.sub(r'(?m)^\s*input\s*:\s*".*?"\s*$', '', ptxt)
-    ptxt = re.sub(r'(?m)^\s*input_dim\s*:\s*\d+\s*$', '', ptxt)
-    ptxt = re.sub(r'(?ms)^\s*input_shape\s*\{.*?\}\s*$', '', ptxt)
+    ptxt = re.sub(r'(?m)^\s*input\s*:\s*".*?"\s*$', "", ptxt)
+    ptxt = re.sub(r"(?m)^\s*input_dim\s*:\s*\d+\s*$", "", ptxt)
+    ptxt = re.sub(r"(?ms)^\s*input_shape\s*\{.*?\}\s*$", "", ptxt)
 
     # Remove any existing Input layers entirely
     out, i, n = [], 0, len(ptxt)
     while i < n:
-        j = ptxt.find('layer {', i)
+        j = ptxt.find("layer {", i)
         if j == -1:
             out.append(ptxt[i:])
             break
         out.append(ptxt[i:j])
         k, depth = j, 0
         while k < n:
-            if ptxt[k] == '{':
+            if ptxt[k] == "{":
                 depth += 1
-            elif ptxt[k] == '}':
+            elif ptxt[k] == "}":
                 depth -= 1
                 if depth == 0:
                     k += 1
@@ -105,17 +106,11 @@ def normalize_input_header(ptxt: str, H: int, W: int, mode: str = "input") -> st
         if not is_input:
             out.append(block)
         i = k
-    body = ''.join(out)
+    body = "".join(out)
 
     if mode == "legacy":
         # Legacy header at the top, NO Input layer
-        header = (
-            f'input: "data"\n'
-            f'input_dim: 1\n'
-            f'input_dim: 3\n'
-            f'input_dim: {H}\n'
-            f'input_dim: {W}\n'
-        )
+        header = f'input: "data"\ninput_dim: 1\ninput_dim: 3\ninput_dim: {H}\ninput_dim: {W}\n'
         final = header + body
         return final
 
@@ -123,21 +118,22 @@ def normalize_input_header(ptxt: str, H: int, W: int, mode: str = "input") -> st
     mname = re.search(r'(^|\n)\s*name\s*:\s*".*?"\s*\n', body)
     insert_at = mname.end() if mname else 0
     input_layer = (
-        'layer {\n'
+        "layer {\n"
         '  name: "data"\n'
         '  type: "Input"\n'
         '  top: "data"\n'
-        '  input_param {\n'
-        f'    shape {{ dim: 1 dim: 3 dim: {H} dim: {W} }}\n'
-        '  }\n'
-        '}\n'
+        "  input_param {\n"
+        f"    shape {{ dim: 1 dim: 3 dim: {H} dim: {W} }}\n"
+        "  }\n"
+        "}\n"
     )
     final = body[:insert_at] + input_layer + body[insert_at:]
 
     # Safety pass: when using Input-mode, make sure no stray top-level input_dim/input_shape remain
-    final = re.sub(r'(?m)^\s*input_dim\s*:\s*\d+\s*$', '', final)
-    final = re.sub(r'(?ms)^\s*input_shape\s*\{.*?\}\s*$', '', final)
+    final = re.sub(r"(?m)^\s*input_dim\s*:\s*\d+\s*$", "", final)
+    final = re.sub(r"(?ms)^\s*input_shape\s*\{.*?\}\s*$", "", final)
     return final
+
 
 def render_sanitized_deploy(template_file: Path, deploy_file: Path, H: int, W: int, header_mode: str):
     tpl = template_file.read_text(encoding="utf-8", errors="ignore")
@@ -147,14 +143,18 @@ def render_sanitized_deploy(template_file: Path, deploy_file: Path, H: int, W: i
     deploy_file.write_text(cleaned, encoding="utf-8")
     # quick debug counts
     num_input = len(re.findall(r'type\s*:\s*"Input"', cleaned))
-    num_input_dim = len(re.findall(r'(?m)^\s*input_dim\s*:', cleaned))
-    num_input_shape = len(re.findall(r'(?m)^\s*input_shape\s*{', cleaned))
-    print(f"[PROTO] Wrote {deploy_file} (H={H}, W={W}, header={header_mode}) | Input layers={num_input}, input_dim lines={num_input_dim}, input_shape blocks={num_input_shape}")
+    num_input_dim = len(re.findall(r"(?m)^\s*input_dim\s*:", cleaned))
+    num_input_shape = len(re.findall(r"(?m)^\s*input_shape\s*{", cleaned))
+    print(
+        f"[PROTO] Wrote {deploy_file} (H={H}, W={W}, header={header_mode}) | Input layers={num_input}, input_dim lines={num_input_dim}, input_shape blocks={num_input_shape}"
+    )
+
 
 def list_images(img_dir: Path):
     for name in os.listdir(img_dir):
         if name.lower().endswith((".jpg", ".jpeg", ".png", ".bmp")):
             yield img_dir / name
+
 
 def make_net(deploy: Path, model: Path, gpu_id: int):
     net = cv2.dnn.readNetFromCaffe(str(deploy), str(model))
@@ -173,17 +173,19 @@ def make_net(deploy: Path, model: Path, gpu_id: int):
         print("[DNN] CPU backend")
     return net
 
+
 def forward_one(net, bgr, H, W, out_blob: str):
-    blob = cv2.dnn.blobFromImage(bgr, scalefactor=1/255.0, size=(W, H), swapRB=True, crop=False)
+    blob = cv2.dnn.blobFromImage(bgr, scalefactor=1 / 255.0, size=(W, H), swapRB=True, crop=False)
     net.setInput(blob)
     try:
         out = net.forward(out_blob)  # NCHW
     except cv2.error:
-        out = net.forward()          # fallback to last layer
-    out = out[0]                     # CHW
+        out = net.forward()  # fallback to last layer
+    out = out[0]  # CHW
     out = np.transpose(out, (1, 2, 0))  # HWC, RGB in [0,1]
     out_bgr = np.clip(out[:, :, ::-1] * 255.0, 0, 255).astype(np.uint8)
     return out_bgr
+
 
 def main():
     ps = argparse.ArgumentParser()
@@ -194,8 +196,13 @@ def main():
     ps.add_argument("--deploy", type=str, default="deployT_clean.prototxt")
     ps.add_argument("--gpu", type=int, default=0, help="GPU id; -1 for CPU")
     ps.add_argument("--out-blob", type=str, default="sum")
-    ps.add_argument("--header", type=str, default="input", choices=["input", "legacy"],
-                    help='Header style: "input" (Input layer) or "legacy" (input + input_dim)')
+    ps.add_argument(
+        "--header",
+        type=str,
+        default="input",
+        choices=["input", "legacy"],
+        help='Header style: "input" (Input layer) or "legacy" (input + input_dim)',
+    )
     args = ps.parse_args()
 
     img_dir = Path(args.img_dir)
@@ -239,6 +246,7 @@ def main():
 
     dt = time.time() - t0
     print(f"[DONE] {n_ok}/{len(files)} images -> {out_dir} in {dt:.2f}s")
+
 
 if __name__ == "__main__":
     main()

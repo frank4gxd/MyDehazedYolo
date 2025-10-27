@@ -1,17 +1,17 @@
 # enhanced_dehaze_model.py
 # 增强版DehazeNet - 解决边界模糊和细节不清晰问题
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, List, Dict
 
 
 # ==========================
 # 基础组件一：LayerNorm2d
 # ==========================
 class LayerNorm2d(nn.Module):
-    """对 4D 特征图 (N, C, H, W) 的通道维 C 做层归一化。"""
+    """对 4D 特征图 (N, C, H, W) 的通道维 C 做层归一化。."""
 
     def __init__(self, num_channels: int, eps: float = 1e-6):
         super().__init__()
@@ -19,7 +19,7 @@ class LayerNorm2d(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         orig_dtype = x.dtype
-        n, c, h, w = x.shape
+        _n, _c, _h, _w = x.shape
         x = x.permute(0, 2, 3, 1)  # (N, H, W, C)
         # 在 FP32 做 LN，避免 AMP 下 Half/Float 冲突
         x = self.ln(x.float()).to(orig_dtype)
@@ -31,10 +31,10 @@ class LayerNorm2d(nn.Module):
 # 基础组件二：PONO (Positional Normalization)
 # ==========================
 class PONO(nn.Module):
-    """位置归一化 (Positional Normalization)"""
+    """位置归一化 (Positional Normalization)."""
 
-    def __init__(self, input_size: Optional[tuple] = None, affine: bool = False, eps: float = 1e-5):
-        super(PONO, self).__init__()
+    def __init__(self, input_size: tuple | None = None, affine: bool = False, eps: float = 1e-5):
+        super().__init__()
         self.eps = eps
         self.affine = affine
         if affine and input_size is not None:
@@ -56,10 +56,10 @@ class PONO(nn.Module):
 # 基础组件三：MS (Modulation and Scaling)
 # ==========================
 class MS(nn.Module):
-    """调制与缩放 (Modulation and Scaling)"""
+    """调制与缩放 (Modulation and Scaling)."""
 
     def __init__(self):
-        super(MS, self).__init__()
+        super().__init__()
 
     def forward(self, x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor) -> torch.Tensor:
         return x * std + mean
@@ -69,16 +69,14 @@ class MS(nn.Module):
 # 基础组件四：MHSA2d（2D特征上的多头自注意力）
 # ==========================
 class MHSA2d(nn.Module):
-    """在 2D 特征图上做多头自注意力"""
+    """在 2D 特征图上做多头自注意力."""
 
     def __init__(self, dim: int, num_heads: int = 4, dropout: float = 0.0):
         super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads,
-                                          dropout=dropout, batch_first=True)  # (N, S, C)
-        self.proj = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.Dropout(dropout)
-        )
+        self.attn = nn.MultiheadAttention(
+            embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True
+        )  # (N, S, C)
+        self.proj = nn.Sequential(nn.Linear(dim, dim), nn.Dropout(dropout))
         self.norm = nn.LayerNorm(dim)  # token 维度 (C) 上 LN
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -86,7 +84,7 @@ class MHSA2d(nn.Module):
         tokens = x.flatten(2).transpose(1, 2)  # (N, HW, C)
         out_dtype = tokens.dtype
         # 在 FP32 做 LN/Attn/Linear，避免 AMP 下 Half/Float 冲突
-        device_type = 'cuda' if tokens.is_cuda else ('mps' if tokens.device.type == 'mps' else 'cpu')
+        device_type = "cuda" if tokens.is_cuda else ("mps" if tokens.device.type == "mps" else "cpu")
         with torch.amp.autocast(device_type=device_type, enabled=False):
             t32 = tokens.float()
             t32 = self.norm(t32)
@@ -100,19 +98,19 @@ class MHSA2d(nn.Module):
 # 基础组件五：ConvBlock
 # ==========================
 class ConvBlock(nn.Module):
-    """3×3 卷积 (+ 可选 LayerNorm2d 或 PONO) + ReLU"""
+    """3×3 卷积 (+ 可选 LayerNorm2d 或 PONO) + ReLU."""
 
-    def __init__(self, in_ch: int, out_ch: int, norm_type: str = 'none', stride: int = 1):
+    def __init__(self, in_ch: int, out_ch: int, norm_type: str = "none", stride: int = 1):
         super().__init__()
         self.norm_type = norm_type
         self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=stride, padding=1, bias=True)
 
-        if norm_type == 'ln':
+        if norm_type == "ln":
             self.norm = LayerNorm2d(out_ch)
-        elif norm_type == 'pono':
+        elif norm_type == "pono":
             self.pono = PONO(affine=False)
             self.ms = MS()
-        elif norm_type == 'none':
+        elif norm_type == "none":
             self.norm = None
         else:
             raise ValueError(f"Unsupported norm_type: {norm_type}")
@@ -122,11 +120,11 @@ class ConvBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv(x)
 
-        if self.norm_type == 'pono':
+        if self.norm_type == "pono":
             x_norm, mean, std = self.pono(x)
             x = self.relu(x_norm)
             x = self.ms(x, mean, std)
-        elif self.norm_type == 'ln':
+        elif self.norm_type == "ln":
             x = self.norm(x)
             x = self.relu(x)
         else:  # 'none'
@@ -139,7 +137,7 @@ class ConvBlock(nn.Module):
 # 改进组件一：通道注意力
 # ==========================
 class ChannelAttention(nn.Module):
-    """通道注意力机制"""
+    """通道注意力机制."""
 
     def __init__(self, channels: int, reduction: int = 16):
         super().__init__()
@@ -156,7 +154,7 @@ class ChannelAttention(nn.Module):
         b, c, _, _ = x.size()
         y = self.gap(x).view(b, c)
         out_dtype = y.dtype
-        device_type = 'cuda' if y.is_cuda else ('mps' if y.device.type == 'mps' else 'cpu')
+        device_type = "cuda" if y.is_cuda else ("mps" if y.device.type == "mps" else "cpu")
         # FC 在 FP32，再 cast 回来
         with torch.amp.autocast(device_type=device_type, enabled=False):
             y32 = self.fc(y.float())
@@ -185,7 +183,7 @@ class EdgeEnhancement(nn.Module):
         self.alpha = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, x):
-        edge = self.lap(x)               # 直接得到 [N,C,H,W] 的边缘
+        edge = self.lap(x)  # 直接得到 [N,C,H,W] 的边缘
         edge = self.edge_conv(edge)
         return x + self.alpha * edge
 
@@ -194,11 +192,11 @@ class EdgeEnhancement(nn.Module):
 # 改进组件三：增强解码器块
 # ==========================
 class EnhancedDecoderBlock(nn.Module):
-    """增强的解码器块 - 更深的卷积和注意力机制"""
+    """增强的解码器块 - 更深的卷积和注意力机制."""
 
-    def __init__(self, in_ch: int, out_ch: int, norm_type: str = 'pono', use_attention: bool = True):
+    def __init__(self, in_ch: int, out_ch: int, norm_type: str = "pono", use_attention: bool = True):
         super().__init__()
-        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.up = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
 
         # 更深的卷积块增强细节恢复
         self.conv1 = ConvBlock(in_ch, out_ch, norm_type=norm_type)
@@ -227,9 +225,9 @@ class EnhancedDecoderBlock(nn.Module):
 # 基础组件六：空间注意力门 (Spatial Attention Gate)
 # ==========================
 class SpatialAttentionGate(nn.Module):
-    """空间注意力门 (AG)"""
+    """空间注意力门 (AG)."""
 
-    def __init__(self, F_g: int, F_l: int, F_int: int, norm_type: str = 'ln'):
+    def __init__(self, F_g: int, F_l: int, F_int: int, norm_type: str = "ln"):
         super().__init__()
         self.W_g = nn.Sequential(
             nn.Conv2d(F_g, F_int, kernel_size=1, stride=1, padding=0, bias=True),
@@ -239,18 +237,18 @@ class SpatialAttentionGate(nn.Module):
         )
 
         # 根据norm_type选择归一化方式
-        if norm_type == 'ln':
-            self.W_g.add_module('norm', LayerNorm2d(F_int))
-            self.W_x.add_module('norm', LayerNorm2d(F_int))
+        if norm_type == "ln":
+            self.W_g.add_module("norm", LayerNorm2d(F_int))
+            self.W_x.add_module("norm", LayerNorm2d(F_int))
             self.psi_norm = LayerNorm2d(1)
-        elif norm_type == 'pono':
+        elif norm_type == "pono":
             self.W_g_pono = PONO(affine=False)
             self.W_g_ms = MS()
             self.W_x_pono = PONO(affine=False)
             self.W_x_ms = MS()
             self.psi_pono = PONO(affine=False)
             self.psi_ms = MS()
-        elif norm_type != 'none':
+        elif norm_type != "none":
             raise ValueError(f"Unsupported norm_type: {norm_type}")
 
         self.norm_type = norm_type
@@ -262,7 +260,7 @@ class SpatialAttentionGate(nn.Module):
         g1 = self.W_g(g)
         x1 = self.W_x(x)
 
-        if self.norm_type == 'pono':
+        if self.norm_type == "pono":
             g1_norm, g_mean, g_std = self.W_g_pono(g1)
             g1 = self.W_g_ms(g1_norm, g_mean, g_std)
             x1_norm, x_mean, x_std = self.W_x_pono(x1)
@@ -271,9 +269,9 @@ class SpatialAttentionGate(nn.Module):
         psi = self.relu(g1 + x1)
         psi = self.psi_conv(psi)
 
-        if self.norm_type == 'ln':
+        if self.norm_type == "ln":
             psi = self.psi_norm(psi)
-        elif self.norm_type == 'pono':
+        elif self.norm_type == "pono":
             psi_norm, psi_mean, psi_std = self.psi_pono(psi)
             psi = self.psi_ms(psi_norm, psi_mean, psi_std)
 
@@ -285,7 +283,7 @@ class SpatialAttentionGate(nn.Module):
 # AOD头：用于估计大气光学深度（雾浓度）
 # ==========================
 class AODHead(nn.Module):
-    """AOD头：估计雾浓度图"""
+    """AOD头：估计雾浓度图."""
 
     def __init__(self, in_channels: int, hidden_channels: int = 64):
         super().__init__()
@@ -295,7 +293,7 @@ class AODHead(nn.Module):
             nn.Conv2d(hidden_channels, hidden_channels, 3, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(hidden_channels, 1, 3, padding=1),
-            nn.Sigmoid()  # 输出范围 [0, 1]，表示雾浓度
+            nn.Sigmoid(),  # 输出范围 [0, 1]，表示雾浓度
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -306,7 +304,7 @@ class AODHead(nn.Module):
 # 物理引导的去雾模块
 # ==========================
 class PhysicsGuidedDehazing(nn.Module):
-    """使用物理模型引导的去雾：J = (I - A) / t + A
+    """使用物理模型引导的去雾：J = (I - A) / t + A.
 
     该实现会自动将低分辨率的 transmission_map 或非 1x1 的 atmospheric_light
     上采样到 hazy_img 的空间分辨率以匹配输入，避免尺寸不一致的广播错误。
@@ -315,11 +313,13 @@ class PhysicsGuidedDehazing(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self,
-                hazy_img: torch.Tensor,
-                transmission_map: torch.Tensor,
-                atmospheric_light: torch.Tensor,
-                epsilon: float = 1e-8) -> torch.Tensor:
+    def forward(
+        self,
+        hazy_img: torch.Tensor,
+        transmission_map: torch.Tensor,
+        atmospheric_light: torch.Tensor,
+        epsilon: float = 1e-8,
+    ) -> torch.Tensor:
         """
         Args:
             hazy_img: 有雾图像 [N, 3, H, W]
@@ -327,27 +327,29 @@ class PhysicsGuidedDehazing(nn.Module):
             atmospheric_light: 大气光 [N, 3, 1, 1] 或 [N, 3, h_a, w_a]
             epsilon: 防止除零的小值
         Returns:
-            dehazed_img: 去雾后的图像 [N, 3, H, W]
+            dehazed_img: 去雾后的图像 [N, 3, H, W].
         """
         # 基本维度检查（更友好地报错）
-        assert hazy_img.dim() == 4 and hazy_img.size(1) == 3, \
-            f"hazy_img must be [N,3,H,W], got {tuple(hazy_img.shape)}"
-        assert transmission_map.dim() == 4 and transmission_map.size(1) == 1, \
+        assert hazy_img.dim() == 4 and hazy_img.size(1) == 3, f"hazy_img must be [N,3,H,W], got {tuple(hazy_img.shape)}"
+        assert transmission_map.dim() == 4 and transmission_map.size(1) == 1, (
             f"transmission_map must be [N,1,h,w], got {tuple(transmission_map.shape)}"
-        assert atmospheric_light.dim() == 4 and atmospheric_light.size(1) == 3, \
+        )
+        assert atmospheric_light.dim() == 4 and atmospheric_light.size(1) == 3, (
             f"atmospheric_light must be [N,3,1,1] or [N,3,h,w], got {tuple(atmospheric_light.shape)}"
+        )
 
         # 1) clamp transmission 到合理区间，避免过小导致数值爆炸
         t = torch.clamp(transmission_map, 0.1, 1.0)
 
         # 2) 若 t 与输入分辨率不同，上采样到输入分辨率（双线性）
         if t.shape[2:] != hazy_img.shape[2:]:
-            t = F.interpolate(t, size=hazy_img.shape[2:], mode='bilinear', align_corners=False)
+            t = F.interpolate(t, size=hazy_img.shape[2:], mode="bilinear", align_corners=False)
 
         # 3) 处理 atmospheric_light：如果不是全局 1x1，则上采样到输入分辨率
         if atmospheric_light.shape[2:] != hazy_img.shape[2:] and atmospheric_light.shape[2:] != (1, 1):
-            atmospheric_light = F.interpolate(atmospheric_light, size=hazy_img.shape[2:],
-                                              mode='bilinear', align_corners=False)
+            atmospheric_light = F.interpolate(
+                atmospheric_light, size=hazy_img.shape[2:], mode="bilinear", align_corners=False
+            )
 
         # 4) 如果 atmospheric_light 是 [N,3,1,1]，广播会自动发生
         dehazed = (hazy_img - atmospheric_light) / (t + epsilon) + atmospheric_light
@@ -361,7 +363,7 @@ class PhysicsGuidedDehazing(nn.Module):
 # 大气光估计模块
 # ==========================
 class AtmosphericLightEstimator(nn.Module):
-    """估计全局大气光"""
+    """估计全局大气光."""
 
     def __init__(self, in_channels: int):
         super().__init__()
@@ -370,14 +372,14 @@ class AtmosphericLightEstimator(nn.Module):
             nn.Linear(in_channels, in_channels // 2),
             nn.ReLU(inplace=True),
             nn.Linear(in_channels // 2, 3),
-            nn.Sigmoid()  # 大气光通常在 [0, 1] 范围内
+            nn.Sigmoid(),  # 大气光通常在 [0, 1] 范围内
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # 全局平均池化
         pooled = self.global_pool(x).squeeze(-1).squeeze(-1)  # [N, C]
         out_dtype = pooled.dtype
-        device_type = 'cuda' if pooled.is_cuda else ('mps' if pooled.device.type == 'mps' else 'cpu')
+        device_type = "cuda" if pooled.is_cuda else ("mps" if pooled.device.type == "mps" else "cpu")
         # 全连接层在 FP32，结果 cast 回来
         with torch.amp.autocast(device_type=device_type, enabled=False):
             A32 = self.fc(pooled.float())  # [N, 3]
@@ -388,8 +390,9 @@ class AtmosphericLightEstimator(nn.Module):
 # DINOv3 ConvNeXt backbone provider (timm)
 # ==========================
 class DinoConvNeXtProvider(nn.Module):
-    def __init__(self, model_name='convnext_small.dinov3_lvd1689m',
-                 pretrained=True, freeze=True, out_indices=(0, 1, 2, 3)):
+    def __init__(
+        self, model_name="convnext_small.dinov3_lvd1689m", pretrained=True, freeze=True, out_indices=(0, 1, 2, 3)
+    ):
         super().__init__()
         try:
             import timm
@@ -397,8 +400,9 @@ class DinoConvNeXtProvider(nn.Module):
         except ImportError as e:
             raise ImportError("Please install timm: pip install timm") from e
 
-        self.backbone = timm.create_model(model_name, pretrained=pretrained,
-                                          features_only=True, out_indices=out_indices)
+        self.backbone = timm.create_model(
+            model_name, pretrained=pretrained, features_only=True, out_indices=out_indices
+        )
         if freeze:
             for p in self.backbone.parameters():
                 p.requires_grad_(False)
@@ -419,19 +423,27 @@ class DinoConvNeXtProvider(nn.Module):
 
 # ==========================
 
+
 # 改进的主干：EnhancedDehazeNet
 # ==========================
 class EnhancedDehazeNet(nn.Module):
-    """增强版DehazeNet - 解决边界模糊和细节不清晰问题"""
+    """增强版DehazeNet - 解决边界模糊和细节不清晰问题."""
 
-    def __init__(self, in_ch: int = 3, base_ch: int = 48, heads: int = 4,
-                 bottleneck_type: str = 'attention', use_aod_head: bool = True,
-                 use_physics_guidance: bool = True, norm_type: str = 'pono',
-                 use_dino_backbone: bool = False,
-                 dino_name: str = 'convnext_small.dinov3_lvd1689m',
-                 dino_freeze: bool = True,
-                 use_edge_enhancement: bool = True,
-                 use_channel_attention: bool = True):
+    def __init__(
+        self,
+        in_ch: int = 3,
+        base_ch: int = 48,
+        heads: int = 4,
+        bottleneck_type: str = "attention",
+        use_aod_head: bool = True,
+        use_physics_guidance: bool = True,
+        norm_type: str = "pono",
+        use_dino_backbone: bool = False,
+        dino_name: str = "convnext_small.dinov3_lvd1689m",
+        dino_freeze: bool = True,
+        use_edge_enhancement: bool = True,
+        use_channel_attention: bool = True,
+    ):
         super().__init__()
         B = base_ch
         self.out_channels = B
@@ -459,17 +471,17 @@ class EnhancedDehazeNet(nn.Module):
             self.enc4 = ConvBlock(4 * B, 8 * B, norm_type=norm_type, stride=2)
 
         # ------- 瓶颈 -------
-        if bottleneck_type == 'attention':
+        if bottleneck_type == "attention":
             # 自注意力瓶颈
             self.attn_in = nn.Conv2d(8 * B, 4 * B, kernel_size=1, stride=1, padding=0)
 
             # 根据norm_type选择瓶颈归一化方式
-            if norm_type == 'pono':
+            if norm_type == "pono":
                 self.pono_bottleneck = PONO(affine=False)
                 self.ms_bottleneck = MS()
-            elif norm_type == 'ln':
+            elif norm_type == "ln":
                 self.ln_bottleneck = LayerNorm2d(4 * B)
-            elif norm_type != 'none':
+            elif norm_type != "none":
                 raise ValueError(f"Unsupported norm_type: {norm_type}")
 
             self.attn = MHSA2d(dim=4 * B, num_heads=heads, dropout=0.0)
@@ -497,8 +509,9 @@ class EnhancedDehazeNet(nn.Module):
         self.enhanced_dec1 = EnhancedDecoderBlock(B, B, norm_type, use_channel_attention)
 
         # NEW: extra upsample to reach full-res when using DINO (e4 is 1/32)
-        self.enhanced_dec0 = EnhancedDecoderBlock(B, B, norm_type,
-                                                  use_channel_attention) if self.use_dino_backbone else None
+        self.enhanced_dec0 = (
+            EnhancedDecoderBlock(B, B, norm_type, use_channel_attention) if self.use_dino_backbone else None
+        )
 
         # ------- 空间注意力门 -------
         self.ag_skip3 = SpatialAttentionGate(F_g=4 * B, F_l=4 * B, F_int=2 * B, norm_type=norm_type)
@@ -515,17 +528,21 @@ class EnhancedDehazeNet(nn.Module):
             self.edge_enhance = EdgeEnhancement(B)
 
         # ------- 增强的输出精炼模块 -------
-        self.enhanced_refine = nn.Sequential(
-            nn.Conv2d(B, B, 3, 1, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(B, B, 3, 1, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(B, B, 3, 1, 1),
-            nn.ReLU(inplace=True),
-        ) if use_edge_enhancement else nn.Sequential(
-            nn.Conv2d(B, B, 3, 1, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(B, B, 3, 1, 1),
+        self.enhanced_refine = (
+            nn.Sequential(
+                nn.Conv2d(B, B, 3, 1, 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(B, B, 3, 1, 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(B, B, 3, 1, 1),
+                nn.ReLU(inplace=True),
+            )
+            if use_edge_enhancement
+            else nn.Sequential(
+                nn.Conv2d(B, B, 3, 1, 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(B, B, 3, 1, 1),
+            )
         )
 
         self.out_conv = nn.Conv2d(B, 3, kernel_size=3, stride=1, padding=1)
@@ -551,21 +568,18 @@ class EnhancedDehazeNet(nn.Module):
         if self.use_aod_head:
             transmission_map = self.aod_head(e4)  # 估计透射率图
             atmospheric_light = self.atmospheric_light_estimator(e4)  # 估计大气光
-            aod_outputs = {
-                'transmission_map': transmission_map,
-                'atmospheric_light': atmospheric_light
-            }
+            aod_outputs = {"transmission_map": transmission_map, "atmospheric_light": atmospheric_light}
 
         # 瓶颈处理
-        if self.bottleneck_type == 'attention':
+        if self.bottleneck_type == "attention":
             a_in = self.attn_in(e4)
 
             # 根据norm_type应用不同的归一化
-            if self.norm_type == 'pono':
+            if self.norm_type == "pono":
                 a_in_norm, mean, std = self.pono_bottleneck(a_in)
                 a_out = self.attn(a_in_norm)
                 a_out = self.ms_bottleneck(a_out, mean, std)
-            elif self.norm_type == 'ln':
+            elif self.norm_type == "ln":
                 a_in_norm = self.ln_bottleneck(a_in)
                 a_out = self.attn(a_in_norm)
             else:  # 'none'
@@ -612,26 +626,29 @@ class EnhancedDehazeNet(nn.Module):
         d1 = d1 + self.enhanced_refine(d1)
         direct_output = self.out_conv(d1)
 
-        outputs = {'dehazed': direct_output}
+        outputs = {"dehazed": direct_output}
 
         # 如果使用AOD头和物理引导
         if self.use_aod_head and self.use_physics_guidance:
-            transmission_map = aod_outputs['transmission_map']
-            atmospheric_light = aod_outputs['atmospheric_light']
+            transmission_map = aod_outputs["transmission_map"]
+            atmospheric_light = aod_outputs["atmospheric_light"]
 
             physics_output = self.physics_dehazing(x, transmission_map, atmospheric_light)
 
-            assert direct_output.shape[2:] == physics_output.shape[2:], \
+            assert direct_output.shape[2:] == physics_output.shape[2:], (
                 f"Fuse size mismatch: direct={direct_output.shape}, physics={physics_output.shape}"
+            )
 
             alpha = 0.7
             fused_output = alpha * direct_output + (1 - alpha) * physics_output
-            outputs.update({
-                'physics_dehazed': physics_output,
-                'transmission_map': transmission_map,
-                'atmospheric_light': atmospheric_light,
-                'fused_dehazed': fused_output
-            })
+            outputs.update(
+                {
+                    "physics_dehazed": physics_output,
+                    "transmission_map": transmission_map,
+                    "atmospheric_light": atmospheric_light,
+                    "fused_dehazed": fused_output,
+                }
+            )
         return outputs
 
 
@@ -639,24 +656,15 @@ class EnhancedDehazeNet(nn.Module):
 # 改进的损失函数
 # ==========================
 class EnhancedDehazeLoss(nn.Module):
-    def __init__(self, loss_weights: Dict[str, float] = None):
+    def __init__(self, loss_weights: dict[str, float] | None = None):
         super().__init__()
-        self.loss_weights = loss_weights or {
-            'mse': 1.0,
-            'ssim': 0.5,
-            'edge': 0.8,
-            'perceptual': 0.0
-        }
+        self.loss_weights = loss_weights or {"mse": 1.0, "ssim": 0.5, "edge": 0.8, "perceptual": 0.0}
         self.mse_loss = nn.MSELoss()
 
-        lap = torch.tensor(
-            [[-1, -1, -1],
-             [-1,  8, -1],
-             [-1, -1, -1]], dtype=torch.float32
-        ).view(1, 1, 3, 3)
+        lap = torch.tensor([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]], dtype=torch.float32).view(1, 1, 3, 3)
         self.register_buffer("laplacian_kernel", lap, persistent=False)
 
-    def ssim_loss(self, x, y, window_size: Optional[int] = None, size_average: bool = True):
+    def ssim_loss(self, x, y, window_size: int | None = None, size_average: bool = True):
         try:
             from pytorch_msssim import ssim
         except ImportError:
@@ -668,10 +676,11 @@ class EnhancedDehazeLoss(nn.Module):
             return self.mse_loss(x, y)
 
         ws = min(11 if window_size is None else window_size, min(h, w))
-        if ws % 2 == 0: ws -= 1
+        if ws % 2 == 0:
+            ws -= 1
         ws = max(3, ws)
 
-        with torch.amp.autocast(device_type=('cuda' if x32.is_cuda else 'cpu'), enabled=False):
+        with torch.amp.autocast(device_type=("cuda" if x32.is_cuda else "cpu"), enabled=False):
             try:
                 return 1.0 - ssim(x32, y32, data_range=1.0, win_size=ws, size_average=size_average)
             except Exception:
@@ -693,29 +702,29 @@ class EnhancedDehazeLoss(nn.Module):
         return F.l1_loss(pred_edges, target_edges)
 
     def forward(self, pred, target):
-        pred   = pred.clamp(0, 1)
+        pred = pred.clamp(0, 1)
         target = target.clamp(0, 1)
 
-        losses: Dict[str, torch.Tensor] = {}
+        losses: dict[str, torch.Tensor] = {}
 
         # 输入数值检查
         if torch.isnan(pred).any() or torch.isinf(pred).any():
-            losses['mse'] = self.mse_loss(pred, target)
-            losses['total'] = losses['mse']
+            losses["mse"] = self.mse_loss(pred, target)
+            losses["total"] = losses["mse"]
             return losses
 
-        if self.loss_weights.get('mse', 0.0) > 0.0:
-            losses['mse'] = self.mse_loss(pred, target)
+        if self.loss_weights.get("mse", 0.0) > 0.0:
+            losses["mse"] = self.mse_loss(pred, target)
 
-        if self.loss_weights.get('ssim', 0.0) > 0.0:
+        if self.loss_weights.get("ssim", 0.0) > 0.0:
             ssim_loss_val = self.ssim_loss(pred, target)
             if torch.isfinite(ssim_loss_val):
-                losses['ssim'] = ssim_loss_val
+                losses["ssim"] = ssim_loss_val
 
-        if self.loss_weights.get('edge', 0.0) > 0.0:
+        if self.loss_weights.get("edge", 0.0) > 0.0:
             edge_loss_val = self.edge_loss(pred, target)
             if torch.isfinite(edge_loss_val):
-                losses['edge'] = edge_loss_val
+                losses["edge"] = edge_loss_val
 
         # 用张量 0 初始化更稳
         total = pred.new_tensor(0.0)
@@ -726,7 +735,7 @@ class EnhancedDehazeLoss(nn.Module):
         if not torch.isfinite(total):
             total = self.mse_loss(pred, target)
 
-        losses['total'] = total
+        losses["total"] = total
         return losses
 
 
@@ -736,18 +745,16 @@ if __name__ == "__main__":
     x = torch.randn(1, 3, 512, 512).to(device)
 
     # 测试增强模型
-    net_enhanced = EnhancedDehazeNet(
-        use_dino_backbone=False,
-        use_edge_enhancement=True,
-        use_channel_attention=True
-    ).to(device)
+    net_enhanced = EnhancedDehazeNet(use_dino_backbone=False, use_edge_enhancement=True, use_channel_attention=True).to(
+        device
+    )
 
     y_enhanced = net_enhanced(x)
     print("[Enhanced] keys:", y_enhanced.keys())
-    print("[Enhanced] output shape:", y_enhanced['dehazed'].shape)
+    print("[Enhanced] output shape:", y_enhanced["dehazed"].shape)
 
     # 测试损失函数
-    target = torch.randn_like(y_enhanced['dehazed'])
+    target = torch.randn_like(y_enhanced["dehazed"])
     loss_fn = EnhancedDehazeLoss()
-    losses = loss_fn(y_enhanced['dehazed'], target)
+    losses = loss_fn(y_enhanced["dehazed"], target)
     print("Losses:", losses)
