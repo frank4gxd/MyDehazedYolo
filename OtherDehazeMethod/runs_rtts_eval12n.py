@@ -93,8 +93,8 @@ def main():
         metrics = model.val(
             data=yaml,
             split="test",
-            imgsz=640,
-            batch=16,
+            imgsz=512,
+            batch=8,
             conf=0.001,
             iou=0.7,
             rect=RECT,          # <-- consistent preview size across splits

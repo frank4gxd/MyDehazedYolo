@@ -16,7 +16,7 @@ Examples:
     >>> torch.onnx.export(m, x, f)
     >>> subprocess.run(f"onnxslim {f} {f} && open {f}", shell=True, check=True)  # pip install onnxslim
 """
-from .dehaze_enhanced import DehazeEnhanced
+from .dino_fuse import DinoCache, DinoFuse
 from .block import (
     C1,
     C2,
@@ -179,5 +179,6 @@ __all__ = (
     "TorchVision",
     "Index",
     "A2C2f",
-    "DehazeEnhanced",
+    "DinoCache",
+    "DinoFuse",
 )
