@@ -174,3 +174,8 @@ pnnx*
 
 # calibration image
 calibration_*.npy
+
+checkpoints_ft_ohaze_enhanced/
+*.pth
+*.ckpt
+
