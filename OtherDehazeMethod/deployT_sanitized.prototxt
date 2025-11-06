@@ -12,7 +12,7 @@ layer {
   type: "Input"
   top: "data"
   input_param {
-    shape { dim: 1 dim: 3 dim: 764 dim: 1152 }
+    shape { dim: 1 dim: 3 dim: 2902 dim: 2756 }
   }
 }
 layer {
