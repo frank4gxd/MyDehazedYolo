@@ -13,6 +13,10 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - dependencies
+  ignore:
+    - dependency-name: "tensorflow"
+    update-types: ["version-update:semver-minor"]
+      
 
   - package-ecosystem: github-actions
     directory: "/.github/workflows"
@@ -22,6 +26,3 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
-ignore:
-  - dependency-name: "tensorflow"
-    update-types: ["version-update:semver-minor"]
