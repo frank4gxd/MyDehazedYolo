@@ -15,7 +15,10 @@ updates:
       - dependencies
   ignore:
     - dependency-name: "tensorflow"
-    update-types: ["version-update:semver-minor"]
+    update-types:
+        - "version-update:semver-major"
+        - "version-update:semver-minor"
+        - "version-update:semver-patch"
       
 
   - package-ecosystem: github-actions
