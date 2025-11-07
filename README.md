@@ -283,3 +283,27 @@ For bug reports and feature requests related to Ultralytics software, please vis
   <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="space">
   <a href="https://discord.com/invite/ultralytics"><img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-discord.png" width="3%" alt="Ultralytics Discord"></a>
 </div>
+
+## Pretrained Backbone & License
+
+This project uses **DINOv3 ConvNeXt-Small** via timm:
+- Model: `timm/convnext_small.dinov3_lvd1689m`
+- License: **DINOv3 License** (Meta). We have accepted and comply with the license terms.
+
+> Key points (summary, see LICENSE for full text):
+> - Acknowledge use of DINO Materials in publications.
+> - No reverse engineering / decompiling / discovering underlying components.
+> - Comply with applicable Trade Controls; do not use for military/warfare, nuclear, espionage, or guns/illegal weapons.
+> - If (re)distributing original or derivative weights, include and distribute **under the same DINOv3 License**.
+
+References:
+- Model card: timm/convnext_small.dinov3_lvd1689m  
+- DINOv3 License: see `LICENSE.md` in this repo (copied from the model’s upstream).
+
+## How to Cite
+
+Please cite DINOv3, ConvNeXt, and timm:
+
+- Siméoni, O. et al. **DINOv3**. arXiv:2508.10104 (2025).
+- Liu, Z. et al. **A ConvNet for the 2020s**. CVPR (2022).
+- Wightman, R. **PyTorch Image Models (timm)**. GitHub/Zenodo (2019).
