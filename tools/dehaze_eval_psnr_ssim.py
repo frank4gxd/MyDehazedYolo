@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
@@ -15,14 +14,18 @@ Notes:
 - Different image sizes are auto-resized (pred -> GT size) before metric computation.
 - Outputs a CSV with per-image PSNR/SSIM and prints the averages.
 """
-import argparse, csv
+
+import argparse
+import csv
 from pathlib import Path
+
 import cv2
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
 from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
 
 EXTS = [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"]
+
 
 def imread_any(path: Path):
     img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
@@ -32,6 +35,7 @@ def imread_any(path: Path):
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     return img
 
+
 def strip_suffixes(stem: str, extra_suffixes):
     COMMON = ["_AOD-Net", "_DCP", "_FFA", "_ffa", "_dehaze", "_dehazed", "_out"]
     # extra_suffixes may contain None; filter falsy
@@ -40,6 +44,7 @@ def strip_suffixes(stem: str, extra_suffixes):
         if suf and stem.endswith(suf):
             return stem[: -len(suf)]
     return stem
+
 
 def find_gt(gt_dir: Path, stem: str):
     for ext in EXTS:
@@ -54,6 +59,7 @@ def find_gt(gt_dir: Path, stem: str):
                 return p
     return None
 
+
 def compute_metrics(gt_bgr, pr_bgr):
     if gt_bgr.shape != pr_bgr.shape:
         pr_bgr = cv2.resize(pr_bgr, (gt_bgr.shape[1], gt_bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
@@ -63,7 +69,8 @@ def compute_metrics(gt_bgr, pr_bgr):
     S = float(ssim(gt, pr, channel_axis=2, data_range=1.0))
     return P, S
 
-def list_images(root: Path, recursive: bool=False):
+
+def list_images(root: Path, recursive: bool = False):
     if recursive:
         for p in root.rglob("*"):
             if p.suffix.lower() in EXTS and p.is_file():
@@ -73,11 +80,14 @@ def list_images(root: Path, recursive: bool=False):
             if p.suffix.lower() in EXTS and p.is_file():
                 yield p
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--gt-dir", type=str, required=True, help="Folder of clear (ground-truth) images")
     ap.add_argument("--pred-dir", type=str, required=True, help="Folder of dehazed images to evaluate")
-    ap.add_argument("--strip-suffix", type=str, default=None, help="Optional suffix to drop from predicted stems, e.g., _AOD-Net")
+    ap.add_argument(
+        "--strip-suffix", type=str, default=None, help="Optional suffix to drop from predicted stems, e.g., _AOD-Net"
+    )
     ap.add_argument("--recursive", action="store_true", help="Recurse into subfolders")
     ap.add_argument("--save-csv", type=str, default=None, help="Optional path to write per-image metrics CSV")
     args = ap.parse_args()
@@ -123,13 +133,14 @@ def main():
         if args.save_csv:
             outp = Path(args.save_csv)
             outp.parent.mkdir(parents=True, exist_ok=True)
-            with open(outp, 'w', newline='') as f:
+            with open(outp, "w", newline="") as f:
                 w = csv.writer(f)
                 w.writerow(["pred_file", "gt_file", "psnr", "ssim"])
                 w.writerows(rows)
             print(f"[CSV] Wrote {outp}")
     else:
         print("[INFO] No pairs matched; nothing to summarize.")
+
 
 if __name__ == "__main__":
     main()

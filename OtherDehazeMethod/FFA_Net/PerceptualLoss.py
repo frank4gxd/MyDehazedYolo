@@ -5,13 +5,9 @@ import torch.nn.functional as F
 # --- Perceptual loss network  --- #
 class LossNetwork(torch.nn.Module):
     def __init__(self, vgg_model):
-        super(LossNetwork, self).__init__()
+        super().__init__()
         self.vgg_layers = vgg_model
-        self.layer_name_mapping = {
-            '3': "relu1_2",
-            '8': "relu2_2",
-            '15': "relu3_3"
-        }
+        self.layer_name_mapping = {"3": "relu1_2", "8": "relu2_2", "15": "relu3_3"}
 
     def output_features(self, x):
         output = {}
@@ -28,4 +24,4 @@ class LossNetwork(torch.nn.Module):
         for dehaze_feature, gt_feature in zip(dehaze_features, gt_features):
             loss.append(F.mse_loss(dehaze_feature, gt_feature))
 
-        return sum(loss)/len(loss)
+        return sum(loss) / len(loss)
