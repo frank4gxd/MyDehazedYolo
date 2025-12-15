@@ -1,7 +1,8 @@
-# -*- coding: utf-8 -*-
 import torch.multiprocessing as mp
-from ultralytics import YOLO
 from dino_yolo_late_concat import attach_dino_late_concat  # 就导这个函数
+
+from ultralytics import YOLO
+
 
 def main():
     y = YOLO(r"E:/Ivs_FrankGuo/Yolo12_Dehazed/ultralytics/ultralytics/cfg/models/12/yolo12.yaml")
@@ -14,7 +15,7 @@ def main():
         reduce_ratio=4,
         alpha_init=0.6,
         diag="swap_p3",  # ← 先开：前5个batch把P3替换成DINO派生特征
-        diag_batches=5
+        diag_batches=5,
     )
 
     y.train(
@@ -29,6 +30,7 @@ def main():
         project="runs/rtts_fusion",
         name="y12n_dino_late_concat_simple",
     )
+
 
 if __name__ == "__main__":
     mp.freeze_support()
