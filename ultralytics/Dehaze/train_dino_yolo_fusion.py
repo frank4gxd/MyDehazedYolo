@@ -1,31 +1,34 @@
 # train_dino_yolo_fusion.py
 import os
 from datetime import datetime
+
 import torch
 import torch.multiprocessing as mp
-from PIL import Image
 import torchvision.utils as vutils
+from PIL import Image
 
 from ultralytics import YOLO
 from ultralytics.Dehaze.dino_yolo_fusion import YOLO12WithDINO
 
 _dumped_epochs = set()
 
+
 def _norm01(x):
     x = x - x.min()
     d = x.max().clamp_min(1e-6)
     return x / d
 
+
 def _save_heatmap(chw, path_png):
     m = _norm01(chw.mean(0)).cpu()
     Image.fromarray((m * 255).byte().numpy()).save(path_png)
 
+
 def _save_grid(chw, path_png, k=16, nrow=8):
     k = min(k, chw.shape[0])
-    grid = vutils.make_grid(
-        chw[:k].unsqueeze(1), nrow=nrow, normalize=True, scale_each=True
-    ).squeeze(0).cpu()
+    grid = vutils.make_grid(chw[:k].unsqueeze(1), nrow=nrow, normalize=True, scale_each=True).squeeze(0).cpu()
     Image.fromarray((grid * 255).byte().numpy()).save(path_png)
+
 
 def make_dump_callback():
     # ✅ 注意：Ultralytics 只会调用 on_train_batch_start(trainer)
@@ -72,14 +75,15 @@ def make_dump_callback():
             for name in ["dino", "fused"]:
                 for lvl, feat in enumerate(taps[name]):  # list of 3 maps
                     fm = feat[0].cpu()  # 取第1张图的 [C,H,W]
-                    _save_heatmap(fm, os.path.join(run_dir, f"{name}_P{3+lvl}_e{epoch:03d}_mean.png"))
-                    _save_grid(fm,    os.path.join(run_dir, f"{name}_P{3+lvl}_e{epoch:03d}_grid.png"))
+                    _save_heatmap(fm, os.path.join(run_dir, f"{name}_P{3 + lvl}_e{epoch:03d}_mean.png"))
+                    _save_grid(fm, os.path.join(run_dir, f"{name}_P{3 + lvl}_e{epoch:03d}_grid.png"))
 
             _dumped_epochs.add(epoch)
         except Exception as e:
-            print(f"[error] dump failed at epoch {getattr(trainer,'epoch','?')}: {e}")
+            print(f"[error] dump failed at epoch {getattr(trainer, 'epoch', '?')}: {e}")
 
     return on_train_batch_start
+
 
 def main():
     # 1) 构建与 baseline 对齐的 YOLO12（用 yaml）
@@ -89,18 +93,18 @@ def main():
     core = y.model
     y.model = YOLO12WithDINO(
         core_yolo=core,
-        dino_name='convnext_small.dinov3_lvd1689m',
-        dino_pretrained=True,      # 用 DINO 公开预训练
-        dino_freeze=True,          # 不解冻 DINO
+        dino_name="convnext_small.dinov3_lvd1689m",
+        dino_pretrained=True,  # 用 DINO 公开预训练
+        dino_freeze=True,  # 不解冻 DINO
         dino_out_indices=(1, 2, 3),
         imgsz_probe=512,
         reduce_ratio=4,
-        use_levels=(True, True, False)  # 只融合 P3/P4 控延迟
-    ).to('cuda')
+        use_levels=(True, True, False),  # 只融合 P3/P4 控延迟
+    ).to("cuda")
 
     # （可选）做一次 debug 前向，确认尺寸/通道
     y.model.debug_dump = True
-    _ = y.model(torch.zeros(1, 3, 512, 512, device='cuda'))
+    _ = y.model(torch.zeros(1, 3, 512, 512, device="cuda"))
     y.model.debug_dump = False
 
     # 3) 注册“每 50 epoch + 最后一轮导出特征”的回调
@@ -113,7 +117,7 @@ def main():
         epochs=200,
         batch=8,
         device=0,
-        workers=4,               # Windows 下 OK（已做 main-guard）
+        workers=4,  # Windows 下 OK（已做 main-guard）
         seed=405,
         deterministic=True,
         project="runs/rtts_fusion",
@@ -121,7 +125,8 @@ def main():
         # pretrained=True 是 Ultralytics 的默认行为，保持和 baseline 一致即可
     )
 
+
 if __name__ == "__main__":
-    mp.freeze_support()                   # Windows 必备
+    mp.freeze_support()  # Windows 必备
     # mp.set_start_method("spawn", force=True)  # 可选：显式指定 spawn
     main()

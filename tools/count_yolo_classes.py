@@ -32,6 +32,7 @@ Usage examples:
   # Save CSV + JSON summaries
   python count_yolo_classes.py --labels ".../labels/train" --save_csv stats.csv --save_json stats.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,14 +40,13 @@ import json
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple, Set
 
 # Fallback for names if neither --data nor --names is given (your 5-class study)
 DEFAULT_NAMES_5 = ["bicycle", "bus", "car", "motorbike", "person"]
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
-def load_names_from_yaml(yaml_path: Path) -> List[str]:
+def load_names_from_yaml(yaml_path: Path) -> list[str]:
     try:
         import yaml  # Requires PyYAML
     except Exception as e:
@@ -69,17 +69,17 @@ def load_names_from_yaml(yaml_path: Path) -> List[str]:
     return [str(x) for x in names]
 
 
-def parse_names_arg(names_arg: str | None) -> List[str]:
+def parse_names_arg(names_arg: str | None) -> list[str]:
     if not names_arg:
         return []
     return [s.strip() for s in names_arg.split(",") if s.strip()]
 
 
-def iter_label_files(labels_dir: Path) -> List[Path]:
+def iter_label_files(labels_dir: Path) -> list[Path]:
     return sorted(p for p in labels_dir.rglob("*.txt") if p.is_file())
 
 
-def read_label_file(label_path: Path) -> List[int]:
+def read_label_file(label_path: Path) -> list[int]:
     """Return list of class ids in this label file. Ignores blank/comment lines."""
     cls_ids = []
     try:
@@ -100,7 +100,7 @@ def read_label_file(label_path: Path) -> List[int]:
     return cls_ids
 
 
-def collect_image_stems(images_dir: Path) -> Set[str]:
+def collect_image_stems(images_dir: Path) -> set[str]:
     stems = set()
     for p in images_dir.rglob("*"):
         if p.suffix.lower() in IMG_EXTS and p.is_file():
@@ -125,7 +125,7 @@ def main():
         sys.exit(1)
 
     # Resolve class names priority: --names > --data > default
-    names: List[str] = []
+    names: list[str] = []
     names = parse_names_arg(args.names) or names
     if not names and args.data:
         names = load_names_from_yaml(args.data)
@@ -142,10 +142,10 @@ def main():
     cls_image_counts: Counter = Counter()
     total_instances = 0
     empty_files = 0
-    stems_with_labels: Set[str] = set()
+    stems_with_labels: set[str] = set()
 
     # For image-wise class presence
-    per_image_classes: Dict[str, Set[int]] = defaultdict(set)
+    per_image_classes: dict[str, set[int]] = defaultdict(set)
 
     for lf in label_files:
         cls_ids = read_label_file(lf)
@@ -157,7 +157,9 @@ def main():
         # Instance counts
         for cid in cls_ids:
             if cid < 0 or cid >= num_classes:
-                msg = f"[{'ERROR' if args.strict else 'WARN'}] Class id {cid} out of range [0,{num_classes-1}] in {lf}"
+                msg = (
+                    f"[{'ERROR' if args.strict else 'WARN'}] Class id {cid} out of range [0,{num_classes - 1}] in {lf}"
+                )
                 print(msg, file=sys.stderr)
                 if args.strict:
                     sys.exit(2)
@@ -205,6 +207,7 @@ def main():
     if args.save_csv:
         try:
             import csv
+
             with args.save_csv.open("w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
                 w.writerow(["class_id", "class_name", "instances", "images_with_class"])

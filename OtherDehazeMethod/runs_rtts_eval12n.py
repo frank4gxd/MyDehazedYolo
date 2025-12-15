@@ -1,23 +1,26 @@
 # runs_rtts_eval12n.py
-from pathlib import Path
 import multiprocessing as mp
-import random, os
+import os
+import random
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
 from ultralytics import YOLO
 
 # ---------------- config ----------------
 MODEL = r"E:\Ivs_FrankGuo\models\yolo12n.pt"
-PROJ  = r"E:\Ivs_FrankGuo\Yolo12_Dehazed\runs_rtts_eval12n"
-SEED  = 405            # determinism
-RECT  = False        # make fixed 640x640 canvases (consistent preview sizes)
+PROJ = r"E:\Ivs_FrankGuo\Yolo12_Dehazed\runs_rtts_eval12n"
+SEED = 405  # determinism
+RECT = False  # make fixed 640x640 canvases (consistent preview sizes)
 
 DATASETS = {
     "test_original": r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco.yaml",
-    "test_AOD":      r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_AOD.yaml",
-    "test_DCP":      r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_DCP.yaml",
+    "test_AOD": r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_AOD.yaml",
+    "test_DCP": r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_DCP.yaml",
     "test_enhanced": r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_enhanced.yaml",
-    "test_FFA":      r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_FFA.yaml",
+    "test_FFA": r"E:\Ivs_FrankGuo\Yolo12_Dehazed\dataset\RTTS-YOLO\RTTS_coco_FFA.yaml",
 }
 # ----------------------------------------
 
@@ -30,6 +33,7 @@ def set_determinism(seed: int = 0):
     # Torch determinism mainly affects training; harmless to set here.
     try:
         import torch
+
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.benchmark = False
@@ -60,12 +64,12 @@ def write_latex_table(df: pd.DataFrame, out_path: Path):
     }
     # bold best in each column
     best_map5095 = df["mAP50-95"].max()
-    best_map50   = df["mAP50"].max()
-    best_p       = df["precision"].max()
-    best_r       = df["recall"].max()
+    best_map50 = df["mAP50"].max()
+    best_p = df["precision"].max()
+    best_r = df["recall"].max()
 
     def maybe_bold(x, best):
-        return r"\textbf{%.3f}" % x if abs(x - best) < 1e-12 or x == best else f"{x:.3f}"
+        return rf"\textbf{{{x:.3f}}}" if abs(x - best) < 1e-12 or x == best else f"{x:.3f}"
 
     for _, row in df.iterrows():
         method = name_map.get(row["split"], row["split"])
@@ -97,23 +101,25 @@ def main():
             batch=8,
             conf=0.001,
             iou=0.7,
-            rect=RECT,          # <-- consistent preview size across splits
-            seed=SEED,          # <-- deterministic ordering/plots
-            workers=0,          # <-- Windows-safe
+            rect=RECT,  # <-- consistent preview size across splits
+            seed=SEED,  # <-- deterministic ordering/plots
+            workers=0,  # <-- Windows-safe
             device=0,
             save_json=True,
-            plots=True,         # saves PR curves, confusion, and val_batch0_pred.jpg
+            plots=True,  # saves PR curves, confusion, and val_batch0_pred.jpg
             project=PROJ,
             name=name,
         )
-        rows.append({
-            "split": name,
-            "mAP50-95": float(metrics.box.map),
-            "mAP50":    float(metrics.box.map50),
-            "mAP75":    float(metrics.box.map75),
-            "precision": float(metrics.box.mp),
-            "recall":    float(metrics.box.mr),
-        })
+        rows.append(
+            {
+                "split": name,
+                "mAP50-95": float(metrics.box.map),
+                "mAP50": float(metrics.box.map50),
+                "mAP75": float(metrics.box.map75),
+                "precision": float(metrics.box.mp),
+                "recall": float(metrics.box.mr),
+            }
+        )
 
     # Summaries
     df = pd.DataFrame(rows)
