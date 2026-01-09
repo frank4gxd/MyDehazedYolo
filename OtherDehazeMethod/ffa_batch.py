@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 FFA-Net batch dehazing for a folder of images.
 
@@ -10,29 +9,31 @@ FFA-Net batch dehazing for a folder of images.
 - PyTorch 2.6+ safe-load compatible (falls back to weights_only=False if trusted)
 """
 
-import os
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
-from torchvision import transforms as T
 import torchvision.utils as vutils
 from PIL import Image
-import numpy as np
+from torchvision import transforms as T
 
 # --- import FFA from your repo (models.py or FFA_Net.py) ---
 FFA = None
 try:
     from FFA_Net import FFA as _FFA
+
     FFA = _FFA
 except Exception:
     try:
         from FFA_Net import FFA as _FFA
+
         FFA = _FFA
     except Exception:
         try:
             import FFA_Net
+
             FFA = getattr(FFA_Net, "FFA", None)
         except Exception:
             FFA = None
@@ -41,6 +42,7 @@ if FFA is None:
         "Could not import class FFA. Ensure your repo provides FFA(gps, blocks) "
         "in either models.py or FFA_Net.py and run this script from that repo."
     )
+
 
 def list_images(root: Path, recursive: bool = False):
     exts = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -53,16 +55,19 @@ def list_images(root: Path, recursive: bool = False):
             if p.suffix.lower() in exts and p.is_file():
                 yield p
 
+
 def _clean_state_dict_keys(state: dict) -> dict:
     # strip common prefixes like 'module.' or 'model.'
     def strip_prefix(d, prefix):
         if all(k.startswith(prefix) for k in d.keys()):
-            return {k[len(prefix):]: v for k, v in d.items()}
+            return {k[len(prefix) :]: v for k, v in d.items()}
         return d
+
     state = strip_prefix(state, "module.")
     state = strip_prefix(state, "model.")
     state = strip_prefix(state, "net.")
     return state
+
 
 def _extract_state_dict(ckpt):
     # Accept plain state_dict, or dicts with typical keys
@@ -71,6 +76,7 @@ def _extract_state_dict(ckpt):
             if key in ckpt and isinstance(ckpt[key], dict):
                 return ckpt[key]
     return ckpt  # assume it's already a state_dict
+
 
 def build_net(weights: Path, gps: int, blocks: int, device: torch.device):
     net = FFA(gps=gps, blocks=blocks)
@@ -84,15 +90,18 @@ def build_net(weights: Path, gps: int, blocks: int, device: torch.device):
         print(f"[WARN] Safe load failed: {e1}\n[INFO] Trying safe loader with NumPy allowlist...")
         # 2) Add NumPy classes to the allowlist for safe loader
         try:
+            import numpy as np
             import torch.serialization as ts
             from numpy.core.multiarray import scalar as np_scalar
-            import numpy as np
+
             ts.add_safe_globals([np_scalar, np.dtype])
             ckpt = torch.load(str(weights), map_location=device)  # still weights_only=True
             print("[LOAD] success after adding NumPy to safe allowlist (weights_only=True).")
         except Exception as e2:
-            print(f"[WARN] Allowlisted safe load still failed: {e2}\n"
-                  f"[INFO] Retrying with weights_only=False (ONLY if you trust this file).")
+            print(
+                f"[WARN] Allowlisted safe load still failed: {e2}\n"
+                f"[INFO] Retrying with weights_only=False (ONLY if you trust this file)."
+            )
             # 3) Final fallback: unsafe (legacy) loader
             ckpt = torch.load(str(weights), map_location=device, weights_only=False)
             print("[LOAD] success with weights_only=False (unsafe legacy loader).")
@@ -112,7 +121,8 @@ def build_net(weights: Path, gps: int, blocks: int, device: torch.device):
 
     # strip common prefixes
     def _strip_prefix(d, prefix):
-        return {k[len(prefix):]: v for k, v in d.items()} if all(k.startswith(prefix) for k in d) else d
+        return {k[len(prefix) :]: v for k, v in d.items()} if all(k.startswith(prefix) for k in d) else d
+
     state = _strip_prefix(state, "module.")
     state = _strip_prefix(state, "model.")
     state = _strip_prefix(state, "net.")
@@ -120,21 +130,32 @@ def build_net(weights: Path, gps: int, blocks: int, device: torch.device):
     info = net.load_state_dict(state, strict=False)
     if getattr(info, "missing_keys", None):
         print("[LOAD] missing_keys:", len(info.missing_keys))
-        for k in info.missing_keys[:10]: print("   -", k)
+        for k in info.missing_keys[:10]:
+            print("   -", k)
     if getattr(info, "unexpected_keys", None):
         print("[LOAD] unexpected_keys:", len(info.unexpected_keys))
-        for k in info.unexpected_keys[:10]: print("   -", k)
+        for k in info.unexpected_keys[:10]:
+            print("   -", k)
 
     if torch.cuda.device_count() > 1 and device.type == "cuda":
         net = nn.DataParallel(net)
     net.to(device).eval()
     return net
 
+
 @torch.no_grad()
-def dehaze_folder(img_dir: Path, out_dir: Path, weights: Path,
-                  gps: int = 3, blocks: int = 19, device_str: str = "auto",
-                  recursive: bool = False, half: bool = False,
-                  no_norm: bool = False, probe: bool = False):
+def dehaze_folder(
+    img_dir: Path,
+    out_dir: Path,
+    weights: Path,
+    gps: int = 3,
+    blocks: int = 19,
+    device_str: str = "auto",
+    recursive: bool = False,
+    half: bool = False,
+    no_norm: bool = False,
+    probe: bool = False,
+):
     # device
     if device_str == "cpu":
         device = torch.device("cpu")
@@ -151,10 +172,12 @@ def dehaze_folder(img_dir: Path, out_dir: Path, weights: Path,
         preprocess = T.ToTensor()
         print("[INFO] Using NO normalization (debug).")
     else:
-        preprocess = T.Compose([
-            T.ToTensor(),
-            T.Normalize(mean=[0.64, 0.60, 0.58], std=[0.14, 0.15, 0.152]),
-        ])
+        preprocess = T.Compose(
+            [
+                T.ToTensor(),
+                T.Normalize(mean=[0.64, 0.60, 0.58], std=[0.14, 0.15, 0.152]),
+            ]
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -163,7 +186,7 @@ def dehaze_folder(img_dir: Path, out_dir: Path, weights: Path,
         print(f"[WARN] no images under {img_dir}")
         return
 
-    use_amp = (device.type == "cuda" and half)
+    use_amp = device.type == "cuda" and half
     n_ok = 0
     for i, src in enumerate(files, 1):
         # read
@@ -193,18 +216,19 @@ def dehaze_folder(img_dir: Path, out_dir: Path, weights: Path,
 
     print(f"[DONE] {n_ok}/{len(files)} images -> {out_dir}")
 
+
 def main():
     ps = argparse.ArgumentParser()
-    ps.add_argument("--img-dir",  type=str, required=True, help="input images folder")
-    ps.add_argument("--out-dir",  type=str, required=True, help="output folder")
-    ps.add_argument("--weights",  type=str, required=True, help="ots_train_ffa_3_19.pk (or path)")
-    ps.add_argument("--gps",      type=int, default=3)
-    ps.add_argument("--blocks",   type=int, default=19)
-    ps.add_argument("--device",   type=str, default="auto", choices=["auto", "cpu", "cuda"])
+    ps.add_argument("--img-dir", type=str, required=True, help="input images folder")
+    ps.add_argument("--out-dir", type=str, required=True, help="output folder")
+    ps.add_argument("--weights", type=str, required=True, help="ots_train_ffa_3_19.pk (or path)")
+    ps.add_argument("--gps", type=int, default=3)
+    ps.add_argument("--blocks", type=int, default=19)
+    ps.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
     ps.add_argument("--recursive", action="store_true", help="recurse into subfolders")
-    ps.add_argument("--half",     action="store_true", help="use AMP on CUDA for speed")
-    ps.add_argument("--no-norm",  action="store_true", help="feed raw ToTensor() without mean/std (debug)")
-    ps.add_argument("--probe",    action="store_true", help="print mean |Δpix| for first 10 images (debug)")
+    ps.add_argument("--half", action="store_true", help="use AMP on CUDA for speed")
+    ps.add_argument("--no-norm", action="store_true", help="feed raw ToTensor() without mean/std (debug)")
+    ps.add_argument("--probe", action="store_true", help="print mean |Δpix| for first 10 images (debug)")
     args = ps.parse_args()
 
     dehaze_folder(
@@ -219,6 +243,7 @@ def main():
         no_norm=args.no_norm,
         probe=args.probe,
     )
+
 
 if __name__ == "__main__":
     main()
