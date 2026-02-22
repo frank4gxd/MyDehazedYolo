@@ -1,29 +1,26 @@
 # ultralytics/ultralytics/nn/modules/dino_fuse.py
 import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class DinoCache(nn.Module):
+    """在图最前面放一个 DinoCache： - 前向：规范化 -> DINO 提取多尺度特征 -> 缓存到类变量 -> 返回原 x（不改动数据流）.
     """
-    在图最前面放一个 DinoCache：
-    - 前向：规范化 -> DINO 提取多尺度特征 -> 缓存到类变量 -> 返回原 x（不改动数据流）
-    """
+
     LAST = None  # class-level 缓存 (P3,P4,P5)
 
-    def __init__(self, name='convnext_small.dinov3_lvd1689m',
-                 out_indices=(1, 2, 3), freeze=True, pretrained=True):
+    def __init__(self, name="convnext_small.dinov3_lvd1689m", out_indices=(1, 2, 3), freeze=True, pretrained=True):
         super().__init__()
         import timm
         from timm.data import resolve_model_data_config
 
-        self.backbone = timm.create_model(
-            name, pretrained=pretrained, features_only=True, out_indices=out_indices
-        )
+        self.backbone = timm.create_model(name, pretrained=pretrained, features_only=True, out_indices=out_indices)
         cfg = resolve_model_data_config(self.backbone)
         mean = torch.tensor(cfg.get("mean", (0.485, 0.456, 0.406))).view(1, 3, 1, 1)
-        std  = torch.tensor(cfg.get("std",  (0.229, 0.224, 0.225))).view(1, 3, 1, 1)
+        std = torch.tensor(cfg.get("std", (0.229, 0.224, 0.225))).view(1, 3, 1, 1)
         self.register_buffer("mean", mean, persistent=False)
         self.register_buffer("std", std, persistent=False)
 
@@ -44,14 +41,10 @@ class DinoCache(nn.Module):
 
 
 class DinoFuse(nn.Module):
+    """单输入融合层（from: -1）： out = y + sigmoid(alpha) * Mix([y, Adapt(D)]) - level: 0/1/2 -> 对应 DINO 的 (P3/P4/P5) -
+    shrink_ratio: 通道压缩比例，越大越省算 - init_p: 门控初值（概率视角），默认 0.1 保守可学 - bn_init: 最后一层 BN 的缩放初值，默认 0.1，避免死分支.
     """
-    单输入融合层（from: -1）：
-    out = y + sigmoid(alpha) * Mix([y, Adapt(D)])
-    - level: 0/1/2 -> 对应 DINO 的 (P3/P4/P5)
-    - shrink_ratio: 通道压缩比例，越大越省算
-    - init_p: 门控初值（概率视角），默认 0.1 保守可学
-    - bn_init: 最后一层 BN 的缩放初值，默认 0.1，避免死分支
-    """
+
     def __init__(self, level=0, shrink_ratio=4, init_p=0.1, bn_init=0.1):
         super().__init__()
         self.level = int(level)
@@ -89,8 +82,9 @@ class DinoFuse(nn.Module):
         self._built = True
 
     def forward(self, y: torch.Tensor):
-        assert DinoCache.LAST is not None, \
+        assert DinoCache.LAST is not None, (
             "DinoFuse: DinoCache has not run. Make sure DinoCache is placed at the top of the model."
+        )
 
         d = DinoCache.LAST[self.level]
         if not self._built:
@@ -98,7 +92,7 @@ class DinoFuse(nn.Module):
 
         d = self.adapt(d)
         if d.shape[2:] != y.shape[2:]:
-            d = F.interpolate(d, size=y.shape[2:], mode='bilinear', align_corners=False)
+            d = F.interpolate(d, size=y.shape[2:], mode="bilinear", align_corners=False)
 
         mixed = self.mix(torch.cat([y, d], dim=1))
         gate = torch.sigmoid(self.alpha_raw)  # ∈ (0,1)

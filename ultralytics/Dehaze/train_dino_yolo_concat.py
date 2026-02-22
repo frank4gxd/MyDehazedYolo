@@ -5,20 +5,22 @@ from datetime import datetime
 import torch
 import torch.multiprocessing as mp
 import torchvision.utils as vutils
+from dino_yolo_concat import YOLO12WithDINO_Concat
 from PIL import Image
 
 from ultralytics import YOLO
-from dino_yolo_concat import YOLO12WithDINO_Concat
 
 _DUMPED = set()
 
-import os, warnings
+import warnings
+
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 # 部分三方库在 Windows + 多进程下会卡死或崩 worker，统一限制 CPU 线程
 try:
     import torch
+
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
 except Exception:
@@ -27,6 +29,7 @@ except Exception:
 # OpenCV 多线程在 DataLoader 多进程里常见争用
 try:
     import cv2
+
     cv2.setNumThreads(0)
 except Exception:
     pass
@@ -36,12 +39,14 @@ warnings.filterwarnings("ignore", message=".*UnsupportedFieldAttributeWarning.*"
 
 # Windows 多进程关键：spawn + freeze_support
 import multiprocessing as mp
+
 if __name__ == "__main__":
     mp.freeze_support()
     try:
         mp.set_start_method("spawn", force=True)
     except RuntimeError:
         pass
+
 
 def _norm01(x):
     x = x - x.min()
@@ -56,11 +61,7 @@ def _save_heatmap(chw, path_png):
 
 def _save_grid(chw, path_png, k=16, nrow=8):
     k = min(k, chw.shape[0])
-    grid = (
-        vutils.make_grid(chw[:k].unsqueeze(1), nrow=nrow, normalize=True, scale_each=True)
-        .squeeze(0)
-        .cpu()
-    )
+    grid = vutils.make_grid(chw[:k].unsqueeze(1), nrow=nrow, normalize=True, scale_each=True).squeeze(0).cpu()
     Image.fromarray((grid * 255).byte().numpy()).save(path_png)
 
 
@@ -108,14 +109,14 @@ def make_dump_callback():
             for name in ["dino", "fused"]:
                 for lvl, feat in enumerate(taps[name]):  # list of maps
                     fm = feat[0].cpu()  # 第1张图 [C,H,W]
-                    base = f"{name}_P{3+lvl}_e{epoch:03d}"
+                    base = f"{name}_P{3 + lvl}_e{epoch:03d}"
                     _save_heatmap(fm, os.path.join(run_dir, f"{base}_mean.png"))
                     _save_grid(fm, os.path.join(run_dir, f"{base}_grid.png"))
 
             _DUMPED.add(epoch)
 
         except Exception as e:
-            print(f"[error] dump failed at epoch {getattr(trainer,'epoch','?')}: {e}")
+            print(f"[error] dump failed at epoch {getattr(trainer, 'epoch', '?')}: {e}")
 
     return on_train_batch_start
 

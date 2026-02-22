@@ -10,14 +10,9 @@ except ImportError as e:
 
 
 class YOLO12WithDINO_Concat(nn.Module):
-    """
-    将 DINO 特征与 YOLO P3/P4/P5 逐层 concat 融合：
-      d_red = Conv1x1(dino)  (降维到 C_yolo/reduce_ratio)
-      fused = Conv1x1( concat(yolo, d_red) ) -> C_yolo
-    参数：
-      - use_levels: (P3,P4,P5) 各层是否融合
-      - reduce_ratio: DINO 通道先降到 C_yolo/reduce_ratio
-      - dino_tune: 'frozen' | 'trainable' | 'partial'
+    """将 DINO 特征与 YOLO P3/P4/P5 逐层 concat 融合： d_red = Conv1x1(dino) (降维到 C_yolo/reduce_ratio) fused = Conv1x1(
+    concat(yolo, d_red) ) -> C_yolo 参数： - use_levels: (P3,P4,P5) 各层是否融合 - reduce_ratio: DINO 通道先降到
+    C_yolo/reduce_ratio - dino_tune: 'frozen' | 'trainable' | 'partial'.
     """
 
     def __init__(
@@ -103,9 +98,7 @@ class YOLO12WithDINO_Concat(nn.Module):
             d.eval()
 
     def _forward_core_graph(self, x):
-        """
-        严格沿 YOLO 计算图前向，收集各层输出，并按 Detect.f 取回 P3/P4/P5。
-        """
+        """严格沿 YOLO 计算图前向，收集各层输出，并按 Detect.f 取回 P3/P4/P5。."""
         mdl = self.core_yolo.model  # nn.ModuleList
         y = []
         cur = x
@@ -162,7 +155,7 @@ class YOLO12WithDINO_Concat(nn.Module):
 
     # ---------- forward ----------
     def forward(self, x):
-        y_layers, det, feats_all = self._forward_core_graph(x)
+        _y_layers, det, feats_all = self._forward_core_graph(x)
         yolo_used = [feats_all[i] for i, flag in enumerate(self.use_levels) if flag]
 
         with torch.set_grad_enabled(any(p.requires_grad for p in self.dino.parameters())):
